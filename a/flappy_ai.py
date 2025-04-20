@@ -2,6 +2,7 @@ import pygame
 import random
 import numpy as np
 import pickle
+import os
 
 # Parâmetros do jogo
 WIDTH = 800
@@ -12,150 +13,155 @@ GAP_HEIGHT = 150
 FPS = 60
 NUM_BIRDS = 10
 
-# Parâmetros de aprendizado
+# Aprendizado
 ALPHA = 0.1
 GAMMA = 0.9
 EPSILON = 0.1
 EPISODES = 1000
 
-# Inicializando o Pygame
+# Inicialização Pygame
 pygame.init()
 win = pygame.display.set_mode((WIDTH, HEIGHT))
 clock = pygame.time.Clock()
 font = pygame.font.SysFont('Arial', 24)
 
-# Parâmetros do pássaro e gravidade
 JUMP_STRENGTH = -10
 GRAVITY = 0.5
 
-# Função de recompensa
-def get_reward(alive, passed):
-    if not alive:
-        return -10  # Morreu
+# Recompensa balanceada
+def get_reward(alive, passed, just_died=False):
+    if just_died:
+        return -2000
     if passed:
-        return 10  # Passou por um cano
-    return 1  # Continua vivo
+        return +10
+    return +0.2
 
-# Função de desenhar todos os pássaros e canos na tela
-def draw_all(birds, pipe_x, gap_y, score):
-    # Limpar o buffer da tela
-    win.fill((0, 0, 0))  # Limpar a tela antes de desenhar
-
-    # Desenhar todos os pássaros
-    for i, (y, color) in enumerate(birds):
-        pygame.draw.rect(win, color, (50, y, BIRD_SIZE, BIRD_SIZE))
-
-    # Desenhar o cano superior
-    pygame.draw.rect(win, (0, 255, 0), (pipe_x, 0, PIPE_WIDTH, gap_y))  # Canos de cima
-    # Desenhar o cano inferior
-    pygame.draw.rect(win, (0, 255, 0), (pipe_x, gap_y + GAP_HEIGHT, PIPE_WIDTH, HEIGHT - gap_y - GAP_HEIGHT))  # Canos de baixo
-
-    # Mostrar a pontuação
-    text = font.render(f"Score: {score}", True, (255, 255, 255))
-    win.blit(text, (10, 10))
-
-    pygame.display.flip()  # Atualizar a tela
-
-scores = [0] * NUM_BIRDS
-# Criar uma Q-table fallback, caso nenhum pássaro sobreviva
-q_fallback = np.zeros((10, 10, 10, 2))
-# Inicializar uma lista para armazenar as 3 melhores Q-tables
-best_q_tables = []
-
-# Inicialização das Q-tables
-q_tables = [np.zeros((10, 10, 10, 2)) for _ in range(NUM_BIRDS)]
-
-# Função de estado com verificação de limites
+# Estado discretizado
 def get_state(bird_y, pipe_x, gap_y):
     y_idx = int(bird_y // (HEIGHT / 10))
     dist_idx = int((pipe_x - 50) // (WIDTH / 10))
     gap_pos = gap_y - bird_y
-    gap_idx = int(np.clip(gap_pos, -200, 200) // (400 / 10))  # Limitando de -200 a 200 para ficar dentro do range
+    gap_idx = int(np.clip(gap_pos, -200, 200) // (400 / 10))
     y_idx = max(0, min(9, y_idx))
     dist_idx = max(0, min(9, dist_idx))
     gap_idx = max(0, min(9, gap_idx))
     return y_idx, dist_idx, gap_idx
 
-# Loop principal do treinamento
+# Fallback e checkpoint
+q_fallback = np.zeros((10, 10, 10, 2))
+best_q_tables = []
+
+# Carregar Q-tables se existirem
+save_path = "qtable_best_avg.pkl"
+if os.path.exists(save_path):
+    with open(save_path, "rb") as f:
+        best_q_tables = pickle.load(f)
+        q_fallback = np.mean(best_q_tables, axis=0)
+    print("✅ Q-tables carregadas com sucesso!")
+else:
+    best_q_tables = []
+    q_fallback = np.zeros((10, 10, 10, 2))
+
+q_tables = [np.copy(q_fallback) for _ in range(NUM_BIRDS)]
+
+def draw_all(birds, pipe_x, gap_y, score):
+    win.fill((0, 0, 0))
+    for i, (y, color) in enumerate(birds):
+        pygame.draw.rect(win, color, (50, y, BIRD_SIZE, BIRD_SIZE))
+    pygame.draw.rect(win, (0, 255, 0), (pipe_x, 0, PIPE_WIDTH, gap_y))
+    pygame.draw.rect(win, (0, 255, 0), (pipe_x, gap_y + GAP_HEIGHT, PIPE_WIDTH, HEIGHT - gap_y - GAP_HEIGHT))
+    text = font.render(f"Score: {score}", True, (255, 255, 255))
+    win.blit(text, (10, 10))
+    pygame.display.flip()
+
+# Treinamento
 for ep in range(EPISODES):
     print(f"\n=== Episódio {ep + 1} ===")
     max_score = 0
     best_q_for_episode = []
+    reward_total = 0
 
     bird_y = [HEIGHT // 2 for _ in range(NUM_BIRDS)]
     bird_vel = [0 for _ in range(NUM_BIRDS)]
-    # pipe_x = [WIDTH for _ in range(NUM_BIRDS)]
     pipe_x = WIDTH
-    # gap_y = [random.randint(100, HEIGHT - 200) for _ in range(NUM_BIRDS)]
     gap_y = random.randint(100, HEIGHT - 200)
     score = 0
-    alive = [True for _ in range(NUM_BIRDS)]
-    frames = [0 for _ in range(NUM_BIRDS)]
+    alive = [True] * NUM_BIRDS
     colors = [tuple(np.random.randint(50, 255, size=3)) for _ in range(NUM_BIRDS)]
+
+    best_q_avg = np.mean(best_q_tables, axis=0) if best_q_tables else q_fallback
+    best_q_avg = np.clip(best_q_avg, -50, 50)
 
     while any(alive):
         clock.tick(FPS)
 
-        # Processar eventos do Pygame
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                print("💾 Encerrando e salvando...")
+                with open("checkpoint.pkl", "wb") as f:
+                    pickle.dump((q_tables, best_q_tables), f)
+                with open(save_path, "wb") as f:
+                    pickle.dump(best_q_tables, f)
                 pygame.quit()
-                exit()  # Encerra o programa corretamente
+                exit()
 
-        # Atualizar a posição dos canos
-        for i in range(NUM_BIRDS):
-            pipe_x -= 0.1
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                print("💾 Encerrando com ESC e salvando...")
+                with open("checkpoint.pkl", "wb") as f:
+                    pickle.dump((q_tables, best_q_tables), f)
+                with open(save_path, "wb") as f:
+                    pickle.dump(best_q_tables, f)
+                pygame.quit()
+                exit()
 
-        # Reiniciar o cano se sair da tela
+
+        pipe_x -= 10
+
+        passou = False
         if pipe_x + PIPE_WIDTH < 0:
             pipe_x = WIDTH
             gap_y = random.randint(100, HEIGHT - 200)
             score += 1
-            print(f"Todos passaram por um novo cano! Score: {score}")
+            passou = True
+            print(f"Pássaros vivos passaram por um cano! Score: {score}")
+            if score > max_score:
+                max_score = score
+                best_q_for_episode = [np.copy(q_tables[i]) for i in range(NUM_BIRDS) if alive[i]]
 
         for i in range(NUM_BIRDS):
             if not alive[i]: continue
 
             state = get_state(bird_y[i], pipe_x, gap_y)
 
-            # Verificação da tabela Q para o pássaro
-            if q_tables[i] is None:
-                print(f"⚠️ Q-table para o pássaro {i} não foi inicializada!")
-                continue
+            action = np.argmax(q_tables[i][state]) if random.random() > EPSILON else random.randint(0, 1)
 
-            # Seleção da ação utilizando a tabela Q
-            action = np.argmax(q_tables[i][state[0], state[1], state[2], :]) if random.random() > EPSILON else random.randint(0, 1)
-
-            # Se o pássaro pular
             if action == 1:
                 bird_vel[i] = JUMP_STRENGTH
             bird_vel[i] += GRAVITY
             bird_y[i] += bird_vel[i]
 
+            just_died = False
+
             if bird_y[i] < 0 or bird_y[i] + BIRD_SIZE > HEIGHT:
+                just_died = alive[i]
                 alive[i] = False
             elif pipe_x < 70 < pipe_x + PIPE_WIDTH:
                 if bird_y[i] < gap_y or bird_y[i] + BIRD_SIZE > gap_y + GAP_HEIGHT:
+                    just_died = alive[i]
                     alive[i] = False
 
-            reward = get_reward(alive[i], pipe_x + PIPE_WIDTH < 50)  # Passou pelo cano?
+            reward = get_reward(alive[i], passou, just_died)
+            reward_total += reward
+
             next_state = get_state(bird_y[i], pipe_x, gap_y)
 
-            # Acesso correto às Q-tables
-            old_q = q_tables[i][state[0], state[1], state[2], action]
-            future_q = np.max(q_tables[i][next_state[0], next_state[1], next_state[2], :])
+            old_q = q_tables[i][state][action]
+            future_q = np.max(q_tables[i][next_state])
+            updated_q = old_q + ALPHA * (reward + GAMMA * future_q - old_q)
+            q_tables[i][state][action] = np.clip(updated_q, -50, 50)
 
-            # Atualizando Q-table
-            q_tables[i][state[0], state[1], state[2], action] = old_q + ALPHA * (reward + GAMMA * future_q - old_q)
-
-        # Desenho do estado e pássaros
         draw_all([(bird_y[i], colors[i]) for i in range(NUM_BIRDS) if alive[i]], pipe_x, gap_y, score)
 
-        if score > max_score:
-            max_score = score
-            best_q_for_episode = [np.copy(q_tables[i]) for i in range(NUM_BIRDS)]  # Guardar as Q-tables melhores
-
-    # Seleção das 3 melhores Q-tables
     if best_q_for_episode:
         best_score_new = max_score
         best_score_existing = max([np.max(q) for q in best_q_tables], default=0)
@@ -164,27 +170,29 @@ for ep in range(EPISODES):
             best_q_tables.extend(best_q_for_episode)
             best_q_tables = sorted(best_q_tables, key=lambda x: np.max(x), reverse=True)[:3]
 
-    # Se nenhum pássaro sobreviveu, usar a média das 3 melhores Q-tables
     if not any(alive):
-        print("⚠️ Nenhum pássaro sobreviveu nesse episódio... usando fallback.")
-        if best_q_tables:  # Verificar se há Q-tables disponíveis
-            best_q_avg = np.mean(best_q_tables, axis=0)  # Média das 3 melhores Q-tables
-        else:
-            print("⚠️ Lista de melhores Q-tables está vazia. Usando Q-table de fallback.")
-            best_q_avg = q_fallback  # Usar Q-table de fallback
-
-        # Atualizar todas as Q-tables dos pássaros com a média ou fallback
+        print("⚠️ Nenhum pássaro sobreviveu... usando fallback.")
+        best_q_avg = np.mean(best_q_tables, axis=0) if best_q_tables else q_fallback
+        best_q_avg = np.clip(best_q_avg, -50, 50)
         for i in range(NUM_BIRDS):
             q_tables[i] = np.copy(best_q_avg)
 
-    # Mutação das Q-tables para a próxima geração
     for i in range(NUM_BIRDS):
         if not np.array_equal(q_tables[i], best_q_avg):
-            q_tables[i] = best_q_avg + np.random.normal(0, 0.01, best_q_avg.shape).astype(np.float32)
+            noise = np.random.normal(0, 0.005, best_q_avg.shape)
+            q_tables[i] = np.clip(best_q_avg + noise.astype(np.float32), -50, 50)
 
-    print(f"Melhor Score desse episódio: {max_score}")
+    print(f"🏁 Score do episódio: {max_score}")
+    print(f"🎯 Média das melhores Q-tables: {np.mean([np.max(q) for q in best_q_tables]) if best_q_tables else 0:.2f}")
+    print(f"💰 Reward médio: {reward_total / NUM_BIRDS:.2f}")
 
-# Salvar as Q-tables médias das melhores
-with open("qtable_best_avg.pkl", "wb") as f:
+    if ep % 10 == 0:
+        print("🔍 Q[0,0,0]:", q_tables[0][0, 0, 0])
+
+    with open("checkpoint.pkl", "wb") as f:
+        pickle.dump((q_tables, best_q_tables), f)
+
+with open(save_path, "wb") as f:
     pickle.dump(best_q_tables, f)
-print("✅ Q-tables médias salvas como qtable_best_avg.pkl")
+print("✅ Q-tables salvas com sucesso!")
+pygame.quit()
