@@ -3,6 +3,7 @@ import random
 import numpy as np
 import pickle
 import os
+import heapq
 
 # === CONFIGURAÇÕES ===
 WIDTH = 800
@@ -68,6 +69,43 @@ def get_state(bird_y, bird_vel, pipe_x, gap_y):
 
     return y_idx, vel_idx, dist_idx, gap_idx
 
+# === PRIORITIZED EXPERIENCE REPLAY ===
+class PrioritizedReplayBuffer:
+    def __init__(self, capacity, alpha=0.6):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.buffer = []
+        self.priorities = []
+        self.pos = 0
+
+    def add(self, experience, priority):
+        if len(self.buffer) < self.capacity:
+            heapq.heappush(self.buffer, experience)
+            self.priorities.append(priority)
+        else:
+            self.buffer[self.pos] = experience
+            self.priorities[self.pos] = priority
+        self.pos = (self.pos + 1) % self.capacity
+
+    def sample(self, batch_size, beta=0.4):
+        # Amostragem com probabilidade proporcional à prioridade
+        priorities = np.array(self.priorities)
+        prob = priorities**self.alpha
+        prob /= prob.sum()
+        
+        indices = np.random.choice(len(self.buffer), size=batch_size, p=prob)
+        
+        batch = [self.buffer[idx] for idx in indices]
+        weights = (len(self.buffer) * prob[indices]) ** (-beta)
+        weights /= weights.max()
+        
+        return batch, indices, weights
+
+    def update_priorities(self, indices, td_errors):
+        # Atualize as prioridades com base no erro de TD
+        for idx, td_error in zip(indices, td_errors):
+            self.priorities[idx] = abs(td_error) + 1e-5  # Um pequeno valor para evitar prioridades 0
+
 # === Q-TABLE SETUP ===
 q_fallback = np.zeros((10, 10, 10, 10, 2))  # y, vel, dist, gap, action
 q_tables = [np.copy(q_fallback) for _ in range(NUM_BIRDS)]
@@ -81,8 +119,12 @@ if os.path.exists(save_path):
     print("✅ Q-tables carregadas com sucesso!")
 else:
     best_q_tables = []
-try:
+    
+# === INICIALIZAÇÃO DO REPLAY BUFFER ===
+replay_buffer = PrioritizedReplayBuffer(capacity=10000)
+
 # === TREINAMENTO ===
+try:
     for ep in range(EPISODES):
         print(f"\n=== Episódio {ep + 1} ===")
         max_score = 0
@@ -99,7 +141,7 @@ try:
         best_q_avg = np.mean(best_q_tables, axis=0) if best_q_tables else q_fallback
 
         while any(alive):
-            clock.tick(600000 if not VISUAL_MODE else FPS)
+            clock.tick(60000 if not VISUAL_MODE else FPS)
 
             if VISUAL_MODE:
                 for event in pygame.event.get():
@@ -148,7 +190,25 @@ try:
 
                 old_q = q_tables[i][*state, action]
                 future_q = np.max(q_tables[i][*next_state])
+                td_error = reward + GAMMA * future_q - old_q
+
+                # Armazenando transições no replay buffer com prioridade
+                replay_buffer.add((state, action, reward, next_state, alive[i]), abs(td_error))
+
+                # Atualiza a Q-table
                 q_tables[i][*state, action] = old_q + ALPHA * (reward + GAMMA * future_q - old_q)
+
+            # Amostragem de minibatch do replay buffer
+            batch, indices, weights = replay_buffer.sample(batch_size=32)
+
+            # Atualiza as prioridades no replay buffer
+            td_errors = []
+            for b in batch:
+                state, action, reward, next_state, done = b
+                future_q = np.max(q_tables[i][*next_state])
+                td_error = reward + GAMMA * future_q - np.max(q_tables[i][*state, action])
+                td_errors.append(td_error)
+            replay_buffer.update_priorities(indices, td_errors)
 
             draw_all([(bird_y[i], colors[i]) for i in range(NUM_BIRDS) if alive[i]], pipe_x, gap_y, score)
 
@@ -174,12 +234,14 @@ try:
 
         with open("checkpoint.pkl", "wb") as f:
             pickle.dump((q_tables, best_q_tables), f)
+
 except KeyboardInterrupt:
     print("⛔ Interrompido manualmente. Salvando progresso...")
     with open(save_path, "wb") as f:
         pickle.dump(best_q_tables, f)
     pygame.quit()
     exit()
+
 with open(save_path, "wb") as f:
     pickle.dump(best_q_tables, f)
 
