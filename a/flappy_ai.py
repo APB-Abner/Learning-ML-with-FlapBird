@@ -31,7 +31,7 @@ GRAVITY = 0.5
 # Função de recompensa
 def get_reward(alive, passed):
     if not alive:
-        return -1  # Morreu
+        return -10  # Morreu
     if passed:
         return 1  # Passou por um cano
     return 0  # Continua vivo
@@ -105,7 +105,7 @@ for ep in range(EPISODES):
             pipe_x[i] -= 5  # Velocidade do movimento dos canos para a esquerda
 
             # Incrementar o score se o pássaro passar pelo cano
-            if pipe_x[i] + PIPE_WIDTH < 50 and alive[i]:  # Verifica se o pássaro passou pelo cano
+            if pipe_x[i] + PIPE_WIDTH < 100 and alive[i]:  # Verifica se o pássaro passou pelo cano
                 score += 1
                 print(f"Pássaro {i} passou pelo cano! Score: {score}")
 
