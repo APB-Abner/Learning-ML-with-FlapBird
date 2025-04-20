@@ -10,7 +10,7 @@ BIRD_SIZE = 30
 PIPE_WIDTH = 50
 GAP_HEIGHT = 150
 FPS = 60
-NUM_BIRDS = 2
+NUM_BIRDS = 10
 
 # Parâmetros de aprendizado
 ALPHA = 0.1
@@ -94,9 +94,20 @@ for ep in range(EPISODES):
     while any(alive):
         clock.tick(FPS)
 
+        # Processar eventos do Pygame
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()  # Encerra o programa corretamente
+
         # Atualizar a posição dos canos
         for i in range(NUM_BIRDS):
             pipe_x[i] -= 5  # Velocidade do movimento dos canos para a esquerda
+
+            # Incrementar o score se o pássaro passar pelo cano
+            if pipe_x[i] + PIPE_WIDTH < 50 and alive[i]:  # Verifica se o pássaro passou pelo cano
+                score += 1
+                print(f"Pássaro {i} passou pelo cano! Score: {score}")
 
             # Reiniciar o cano quando ele sair da tela
             if pipe_x[i] + PIPE_WIDTH < 0:
@@ -128,7 +139,7 @@ for ep in range(EPISODES):
                 if bird_y[i] < gap_y[i] or bird_y[i] + BIRD_SIZE > gap_y[i] + GAP_HEIGHT:
                     alive[i] = False
 
-            reward = get_reward(alive[i], False)
+            reward = get_reward(alive[i], pipe_x[i] + PIPE_WIDTH < 50)  # Passou pelo cano?
             next_state = get_state(bird_y[i], pipe_x[i], gap_y[i])
 
             # Acesso correto às Q-tables
