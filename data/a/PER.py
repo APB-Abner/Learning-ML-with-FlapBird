@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 import os
 import heapq
-
+# deep reinforcement learning
 # === CONFIGURAÇÕES ===
 WIDTH = 800
 HEIGHT = 600

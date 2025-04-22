@@ -1,0 +1,24 @@
+{
+    "name": "ml-studio",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "ml-app",
+    "workspaceFolder": "/workspace",
+    "features": {
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
+    "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+    },
+    "extensions": [
+        "ms-python.python",
+        "ms-toolsai.jupyter"
+    ],
+    "postCreateCommand": "pip install -r requirements.txt",
+    "forwardPorts": [
+        8888,
+        5432,
+        6379
+    ],
+    "remoteUser": "vscode"
+}

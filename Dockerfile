@@ -1,39 +1,24 @@
-FROM python:3.13-slim
+FROM python:3.11-slim
 
-# Instala dependências do sistema
+# System dependencies
 RUN apt-get update && apt-get install -y \
+    git \
+    curl \
     build-essential \
-    python3-dev \
-    libsdl2-dev \
-    libsdl2-image-dev \
-    libsdl2-mixer-dev \
-    libsdl2-ttf-dev \
-    libportmidi-dev \
-    libswscale-dev \
-    libavformat-dev \
-    libavcodec-dev \
-    libfreetype6-dev \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Define o diretório de trabalho
-WORKDIR /app
+# Create workspace
+WORKDIR /workspace
 
-# Copia os arquivos de dependências
+# Install pip packages
 COPY requirements.txt .
-
-# Instala as dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia o restante do código
-COPY app/ /app
+# Jupyter config
+EXPOSE 8888
 
-# Comando padrão
-CMD ["python", "flappy_bird.py"]
-
-
-
-
-
-
-
-# CMD ["python", "main.py"]
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]

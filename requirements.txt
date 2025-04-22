@@ -1,5 +1,28 @@
-pygame
+# Core ML
 numpy
+pandas
 scikit-learn
+
+# Deep Learning
+torch
+torchvision
+tensorflow
+
+# NLP
+spacy
+transformers
+
+# CV
+opencv-python
+
+# Jupyter
+jupyterlab
 matplotlib
-neat-python
+seaborn
+
+# Experiment tracking
+mlflow
+
+# API (optional for deployment)
+fastapi
+uvicorn

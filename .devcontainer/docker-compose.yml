@@ -1,0 +1,37 @@
+services:
+  ml-app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    volumes:
+      - ml-data:/workspace/data
+      - ml-checkpoints:/workspace/checkpoints
+      - ..:/workspace
+    ports:
+      - "8888:8888"
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+    depends_on:
+      - redis
+      - postgres
+
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: mluser
+      POSTGRES_PASSWORD: mlpass
+      POSTGRES_DB: mldb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  ml-data:
+  ml-checkpoints:
+  pgdata:
